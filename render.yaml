@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: canteen-system
+    runtime: python
+    buildCommand: pip install flask flask-cors pyjwt
+    startCommand: python app.py --web
+    envVars:
+      - key: PORT
+        value: "3000"
