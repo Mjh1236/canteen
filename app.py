@@ -23,18 +23,23 @@ _HEADERS = {'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}',
 
 import urllib.request as _ur
 
+def _empty_db():
+    return {'users':[], 'canteens':[], 'dishes':[], 'reviews':[], 'favorites':[],
+            'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
+
 def load_db():
     try:
         req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
         resp = _ur.urlopen(req, timeout=10)
         rows = json.loads(resp.read())
         if rows and 'data' in rows[0]:
-            return rows[0]['data']
+            data = rows[0]['data']
+            if 'canteens' in data:
+                return data
     except Exception as e:
         print(f'Supabase读取失败，使用本地缓存: {e}')
         return _local_load()
-    return {'users':[], 'canteens':[], 'dishes':[], 'reviews':[], 'favorites':[],
-            'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
+    return _empty_db()
 
 def save_db(db):
     try:
