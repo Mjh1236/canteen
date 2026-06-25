@@ -14,26 +14,55 @@ app = Flask(__name__)
 CORS(app)
 app.config['SECRET_KEY'] = 'canteen_jwt_secret_2024'
 
-import sys as _sys
+# ==================== Supabase 数据库 ====================
+SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://ddgiwuhhdirzjsralvxd.supabase.co')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'sb_publishable_fUQWTpb8q46nfSLl8GU1pQ_R2G2bCsf')
+_STATE_URL = f'{SUPABASE_URL}/rest/v1/state?id=eq.1'
+_HEADERS = {'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}',
+            'Content-Type': 'application/json', 'Prefer': 'return=representation'}
+
+import urllib.request as _ur
+
+def load_db():
+    try:
+        req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
+        resp = _ur.urlopen(req, timeout=10)
+        rows = json.loads(resp.read())
+        if rows and 'data' in rows[0]:
+            return rows[0]['data']
+    except Exception as e:
+        print(f'Supabase读取失败，使用本地缓存: {e}')
+        return _local_load()
+    return {'users':[], 'canteens':[], 'dishes':[], 'reviews':[], 'favorites':[],
+            'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
+
+def save_db(db):
+    try:
+        body = json.dumps({'data': db}, ensure_ascii=False).encode('utf-8')
+        req = _ur.Request(_STATE_URL, data=body, method='PATCH', headers=_HEADERS)
+        _ur.urlopen(req, timeout=10)
+        _local_save(db)
+    except Exception as e:
+        print(f'Supabase保存失败，仅本地缓存: {e}')
+        _local_save(db)
+
+# 本地缓存（Supabase故障时的备份）
+import sys as _sys, tempfile as _tmp
 if getattr(_sys, 'frozen', False):
     _BASE_DIR = os.path.dirname(_sys.executable)
 else:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(_BASE_DIR, 'data')
-DB_FILE = os.path.join(DATA_DIR, 'db.json')
-os.makedirs(DATA_DIR, exist_ok=True)
+_CACHE_FILE = os.path.join(_BASE_DIR, 'data', 'cache.json')
+os.makedirs(os.path.dirname(_CACHE_FILE), exist_ok=True)
 
-# ==================== 数据库 ====================
-def load_db():
-    if not os.path.exists(DB_FILE):
-        init = {'users':[], 'canteens':[], 'dishes':[], 'reviews':[], 'favorites':[],
-                'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
-        with open(DB_FILE,'w',encoding='utf-8') as f: json.dump(init,f,ensure_ascii=False,indent=2)
-        return init
-    with open(DB_FILE,'r',encoding='utf-8') as f: return json.load(f)
+def _local_load():
+    if os.path.exists(_CACHE_FILE):
+        with open(_CACHE_FILE,'r',encoding='utf-8') as f: return json.load(f)
+    return {'users':[], 'canteens':[], 'dishes':[], 'reviews':[], 'favorites':[],
+            'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
 
-def save_db(db):
-    with open(DB_FILE,'w',encoding='utf-8') as f: json.dump(db,f,ensure_ascii=False,indent=2)
+def _local_save(db):
+    with open(_CACHE_FILE,'w',encoding='utf-8') as f: json.dump(db,f,ensure_ascii=False,indent=2)
 
 def nid(db,key):
     db['seq'][key]=db['seq'].get(key,0)+1
