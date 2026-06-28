@@ -28,28 +28,47 @@ def _empty_db():
             'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
 
 def load_db():
+    # 优先使用本地缓存（保证增删改立即生效）
+    local = _local_load()
+    if local.get('canteens') or local.get('users'):
+        # 后台尝试从Supabase同步（仅补充本地没有的数据）
+        try:
+            req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
+            resp = _ur.urlopen(req, timeout=5)
+            rows = json.loads(resp.read())
+            if rows and 'data' in rows[0]:
+                remote = rows[0]['data']
+                # 云端数据比本地多时，合并到本地
+                if len(remote.get('dishes',[])) > len(local.get('dishes',[])):
+                    local = remote
+                    _local_save(local)
+        except Exception:
+            pass  # Supabase不可达，使用本地缓存
+        return local
+    # 本地无缓存时，从Supabase加载
     try:
         req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
         resp = _ur.urlopen(req, timeout=10)
         rows = json.loads(resp.read())
         if rows and 'data' in rows[0]:
             data = rows[0]['data']
-            if 'canteens' in data:
+            if 'canteens' in data or 'users' in data:
+                _local_save(data)
                 return data
     except Exception as e:
-        print(f'Supabase读取失败，使用本地缓存: {e}')
-        return _local_load()
+        print(f'Supabase读取失败: {e}')
     return _empty_db()
 
 def save_db(db):
+    # 始终优先保存到本地缓存，保证数据不丢失
+    _local_save(db)
+    # 后台尝试同步到Supabase（best-effort）
     try:
         body = json.dumps({'data': db}, ensure_ascii=False).encode('utf-8')
         req = _ur.Request(_STATE_URL, data=body, method='PATCH', headers=_HEADERS)
-        _ur.urlopen(req, timeout=10)
-        _local_save(db)
-    except Exception as e:
-        print(f'Supabase保存失败，仅本地缓存: {e}')
-        _local_save(db)
+        _ur.urlopen(req, timeout=5)
+    except Exception:
+        pass  # Supabase不可达也不影响使用
 
 # 本地缓存（Supabase故障时的备份）
 import sys as _sys, tempfile as _tmp
