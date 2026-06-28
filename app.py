@@ -17,6 +17,8 @@ app.config['SECRET_KEY'] = 'canteen_jwt_secret_2024'
 # ==================== Supabase 数据库 ====================
 SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://ddgiwuhhdirzjsralvxd.supabase.co')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'sb_publishable_fUQWTpb8q46nfSLl8GU1pQ_R2G2bCsf')
+# service_role秘钥通过环境变量设置: set SUPABASE_SERVICE_KEY=sb_secret_xxx
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
 _STATE_URL = f'{SUPABASE_URL}/rest/v1/state?id=eq.1'
 _HEADERS = {'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}',
             'Content-Type': 'application/json', 'Prefer': 'return=representation'}
@@ -60,15 +62,19 @@ def load_db():
     return _empty_db()
 
 def save_db(db):
-    # 始终优先保存到本地缓存，保证数据不丢失
+    # 本地缓存始终保存，保证数据不丢失
     _local_save(db)
-    # 后台尝试同步到Supabase（best-effort）
-    try:
-        body = json.dumps({'data': db}, ensure_ascii=False).encode('utf-8')
-        req = _ur.Request(_STATE_URL, data=body, method='PATCH', headers=_HEADERS)
-        _ur.urlopen(req, timeout=5)
-    except Exception:
-        pass  # Supabase不可达也不影响使用
+    # 如果有service_role秘钥，同步到Supabase云端
+    if SUPABASE_SERVICE_KEY:
+        try:
+            headers = dict(_HEADERS)
+            headers['apikey'] = SUPABASE_SERVICE_KEY
+            headers['Authorization'] = f'Bearer {SUPABASE_SERVICE_KEY}'
+            body = json.dumps({'data': db}, ensure_ascii=False).encode('utf-8')
+            req = _ur.Request(_STATE_URL, data=body, method='PATCH', headers=headers)
+            _ur.urlopen(req, timeout=10)
+        except Exception as e:
+            print(f'Supabase同步失败（本地数据已保存）: {e}')
 
 # 本地缓存（Supabase故障时的备份）
 import sys as _sys, tempfile as _tmp
