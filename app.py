@@ -17,7 +17,6 @@ app.config['SECRET_KEY'] = 'canteen_jwt_secret_2024'
 # ==================== Supabase 数据库 ====================
 SUPABASE_URL = os.environ.get('SUPABASE_URL', 'https://ddgiwuhhdirzjsralvxd.supabase.co')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', 'sb_publishable_fUQWTpb8q46nfSLl8GU1pQ_R2G2bCsf')
-# service_role秘钥通过环境变量设置: set SUPABASE_SERVICE_KEY=sb_secret_xxx
 SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
 _STATE_URL = f'{SUPABASE_URL}/rest/v1/state?id=eq.1'
 _HEADERS = {'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}',
@@ -30,41 +29,27 @@ def _empty_db():
             'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
 
 def load_db():
-    # 优先使用本地缓存（保证增删改立即生效）
-    local = _local_load()
-    if local.get('canteens') or local.get('users'):
-        # 后台尝试从Supabase同步（仅补充本地没有的数据）
-        try:
-            req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
-            resp = _ur.urlopen(req, timeout=5)
-            rows = json.loads(resp.read())
-            if rows and 'data' in rows[0]:
-                remote = rows[0]['data']
-                # 云端数据比本地多时，合并到本地
-                if len(remote.get('dishes',[])) > len(local.get('dishes',[])):
-                    local = remote
-                    _local_save(local)
-        except Exception:
-            pass  # Supabase不可达，使用本地缓存
-        return local
-    # 本地无缓存时，从Supabase加载
+    # 云端优先：从Supabase拉取最新数据，多设备实时同步
     try:
         req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
         resp = _ur.urlopen(req, timeout=10)
         rows = json.loads(resp.read())
         if rows and 'data' in rows[0]:
             data = rows[0]['data']
-            if 'canteens' in data or 'users' in data:
-                _local_save(data)
+            if data.get('canteens') or data.get('users'):
+                _local_save(data)  # 同步到本地缓存
                 return data
-    except Exception as e:
-        print(f'Supabase读取失败: {e}')
+    except Exception:
+        pass  # Supabase不可达，降级到本地缓存
+    # 降级：使用本地缓存
+    local = _local_load()
+    if local.get('canteens') or local.get('users'):
+        return local
     return _empty_db()
 
 def save_db(db):
-    # 本地缓存始终保存，保证数据不丢失
+    # 本地缓存 + Supabase云端双写
     _local_save(db)
-    # 如果有service_role秘钥，同步到Supabase云端
     if SUPABASE_SERVICE_KEY:
         try:
             headers = dict(_HEADERS)
