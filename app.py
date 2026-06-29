@@ -29,7 +29,24 @@ def _empty_db():
             'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
 
 def load_db():
-    # 云端优先：从Supabase拉取最新数据，多设备实时同步
+    # 本地缓存优先，保证增删改立即生效
+    local = _local_load()
+    if local.get('canteens') or local.get('users'):
+        # 后台同步：云端有多余数据时合并
+        try:
+            req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
+            resp = _ur.urlopen(req, timeout=5)
+            rows = json.loads(resp.read())
+            if rows and 'data' in rows[0]:
+                remote = rows[0]['data']
+                # 云端数据更多时说明其他设备新增了，合并到本地
+                if len(remote.get('dishes',[])) > len(local.get('dishes',[])):
+                    local = remote
+                    _local_save(local)
+        except Exception:
+            pass
+        return local
+    # 本地无缓存，从Supabase加载
     try:
         req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
         resp = _ur.urlopen(req, timeout=10)
@@ -37,29 +54,32 @@ def load_db():
         if rows and 'data' in rows[0]:
             data = rows[0]['data']
             if data.get('canteens') or data.get('users'):
-                _local_save(data)  # 同步到本地缓存
+                _local_save(data)
                 return data
     except Exception:
-        pass  # Supabase不可达，降级到本地缓存
-    # 降级：使用本地缓存
-    local = _local_load()
-    if local.get('canteens') or local.get('users'):
-        return local
+        pass
     return _empty_db()
 
 def save_db(db):
-    # 本地缓存 + Supabase云端双写
+    # 本地缓存始终先保存
     _local_save(db)
+    # 同步到Supabase云端（重试3次确保写入成功）
     if SUPABASE_SERVICE_KEY:
-        try:
-            headers = dict(_HEADERS)
-            headers['apikey'] = SUPABASE_SERVICE_KEY
-            headers['Authorization'] = f'Bearer {SUPABASE_SERVICE_KEY}'
-            body = json.dumps({'data': db}, ensure_ascii=False).encode('utf-8')
-            req = _ur.Request(_STATE_URL, data=body, method='PATCH', headers=headers)
-            _ur.urlopen(req, timeout=10)
-        except Exception as e:
-            print(f'Supabase同步失败（本地数据已保存）: {e}')
+        headers = dict(_HEADERS)
+        headers['apikey'] = SUPABASE_SERVICE_KEY
+        headers['Authorization'] = f'Bearer {SUPABASE_SERVICE_KEY}'
+        body = json.dumps({'data': db}, ensure_ascii=False).encode('utf-8')
+        for attempt in range(3):
+            try:
+                req = _ur.Request(_STATE_URL, data=body, method='PATCH', headers=headers)
+                resp = _ur.urlopen(req, timeout=10)
+                if resp.getcode() in (200, 201, 204):
+                    break  # 成功
+                print(f'Supabase异常({attempt+1}/3): {resp.getcode()}')
+            except Exception as e:
+                print(f'Supabase失败({attempt+1}/3): {e}')
+                if attempt < 2:
+                    import time as _time; _time.sleep(1)
 
 # 本地缓存（Supabase故障时的备份）
 import sys as _sys, tempfile as _tmp
