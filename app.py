@@ -99,18 +99,14 @@ def nid(db,key):
 # ==================== 种子数据 ====================
 def seed():
     db = load_db()
-    if db['canteens'] and db['dishes'] and db['users']: return
+    if db['canteens'] and db['users']: return
     # 数据不完整时补充缺失数据
     if not db['canteens']:
         c = nid(db,'canteen')
         db['canteens']=[{'id':c,'name':'第三食堂','campus':'主校区','floor':1,'open_time':'06:30','close_time':'21:30','desc':'主校区核心食堂，菜品丰富多样，环境整洁舒适'}]
-    canteen_id = db['canteens'][0]['id'] if db['canteens'] else nid(db,'canteen')
-    if not db['dishes']:
-        raw=[('宫保鸡丁盖饭','盖饭',14,'鸡肉鲜嫩，花生酥脆'),('鱼香肉丝盖饭','盖饭',13,'酸甜可口，下饭神器'),('红烧排骨面','面食',16,'排骨软烂入味，汤头浓郁'),('番茄鸡蛋面','面食',10,'经典搭配，营养均衡'),('麻辣香锅','小炒',22,'自选食材，麻辣鲜香'),('糖醋里脊','小炒',18,'外酥里嫩，酸甜适口'),('蛋炒饭','主食',8,'粒粒分明，简单美味'),('酸辣粉','小吃',9,'酸辣开胃，粉条爽滑'),('兰州拉面','面食',12,'手工拉制，汤清味浓'),('黄焖鸡米饭','盖饭',16,'鸡肉鲜嫩多汁'),('麻辣烫','小吃',15,'自选菜品，麻辣过瘾'),('铁板牛肉饭','盖饭',20,'铁板现做，香气四溢'),('馄饨','小吃',8,'皮薄馅大，汤鲜味美'),('炒河粉','主食',11,'Q弹爽滑，锅气十足'),('手抓饼','小吃',7,'外酥里软，方便快捷'),('水煮肉片','小炒',25,'麻辣鲜嫩，分量十足'),('清蒸鲈鱼','小炒',28,'肉质细嫩，鲜美无比'),('干煸四季豆','小炒',15,'干香微辣，下饭好菜'),('酸菜鱼','小炒',26,'酸辣鲜香，鱼肉嫩滑'),('回锅肉盖饭','盖饭',17,'肥而不腻，酱香浓郁')]
-        db['dishes']=[]
-        for nm,cat,pr,de in raw:
-            d=nid(db,'dish')
-            db['dishes'].append({'id':d,'canteen_id':canteen_id,'name':nm,'category':cat,'price':pr,'desc':de,'image':'','avg_rating':0,'review_count':0,'is_available':True,'created_at':datetime.now().isoformat()})
+    # 菜品为空，由管理员手动添加，ID从1开始
+    if 'dishes' not in db:
+        db['dishes'] = []
     if not db['users']:
         a=nid(db,'user')
         db['users'].append({'id':a,'student_id':'admin','nickname':'系统管理员','password':generate_password_hash('admin123'),'role':'admin','created_at':datetime.now().isoformat()})
