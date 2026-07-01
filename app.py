@@ -29,24 +29,11 @@ def _empty_db():
             'seq':{'user':0,'canteen':0,'dish':0,'review':0,'favorite':0}}
 
 def load_db():
-    # 本地缓存优先，保证增删改立即生效
+    # 本地缓存始终是第一优先级，增删改立即生效且不会被云端覆盖
     local = _local_load()
     if local.get('canteens') or local.get('users'):
-        # 后台同步：云端有多余数据时合并
-        try:
-            req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
-            resp = _ur.urlopen(req, timeout=5)
-            rows = json.loads(resp.read())
-            if rows and 'data' in rows[0]:
-                remote = rows[0]['data']
-                # 云端数据更多时说明其他设备新增了，合并到本地
-                if len(remote.get('dishes',[])) > len(local.get('dishes',[])):
-                    local = remote
-                    _local_save(local)
-        except Exception:
-            pass
         return local
-    # 本地无缓存，从Supabase加载
+    # 本地无缓存（首次启动或文件丢失），从Supabase加载
     try:
         req = _ur.Request(_STATE_URL, headers={k:v for k,v in _HEADERS.items() if k!='Content-Type'})
         resp = _ur.urlopen(req, timeout=10)
@@ -78,8 +65,6 @@ def save_db(db):
                 print(f'Supabase异常({attempt+1}/3): {resp.getcode()}')
             except Exception as e:
                 print(f'Supabase失败({attempt+1}/3): {e}')
-                if attempt < 2:
-                    import time as _time; _time.sleep(1)
 
 # 本地缓存（Supabase故障时的备份）
 import sys as _sys, tempfile as _tmp
